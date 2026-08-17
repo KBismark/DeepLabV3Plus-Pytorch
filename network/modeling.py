@@ -3,6 +3,7 @@ from ._deeplab import DeepLabHead, DeepLabHeadV3Plus, DeepLabV3
 from .backbone import (
     resnet,
     mobilenetv2,
+    mobilenetv3,
     hrnetv2,
     xception
 )
@@ -109,6 +110,36 @@ def _segm_mobilenet(name, backbone_name, num_classes, output_stride, pretrained_
     model = DeepLabV3(backbone, classifier)
     return model
 
+def _segm_mobilenetv3_large(name, backbone_name, num_classes, output_stride, pretrained_backbone):
+    if output_stride == 8:
+        aspp_dilate = [12, 24, 36]
+    else:
+        aspp_dilate = [6, 12, 18]
+ 
+    backbone = mobilenetv3.mobilenet_v3_large(pretrained=pretrained_backbone, output_stride=output_stride)
+ 
+    # same renaming convention as _segm_mobilenet(): features[0:4] is the
+    # 24ch/stride4 low-level tap, features[4:-1] excludes the final 1x1
+    # head conv, same as MobileNetV2's last_channel expand layer.
+    backbone.low_level_features = backbone.features[0:4]
+    backbone.high_level_features = backbone.features[4:-1]
+    backbone.features = None
+    backbone.classifier = None
+ 
+    inplanes = 160          # MobileNetV3-Large's last bneck output channels
+    low_level_planes = 24   # matches MobileNetV2's low_level_planes exactly
+ 
+    if name == 'deeplabv3plus':
+        return_layers = {'high_level_features': 'out', 'low_level_features': 'low_level'}
+        classifier = DeepLabHeadV3Plus(inplanes, low_level_planes, num_classes, aspp_dilate)
+    elif name == 'deeplabv3':
+        return_layers = {'high_level_features': 'out'}
+        classifier = DeepLabHead(inplanes, num_classes, aspp_dilate)
+    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
+ 
+    model = DeepLabV3(backbone, classifier)
+    return model
+
 def _load_model(arch_type, backbone, num_classes, output_stride, pretrained_backbone):
 
     if backbone=='mobilenetv2':
@@ -119,6 +150,8 @@ def _load_model(arch_type, backbone, num_classes, output_stride, pretrained_back
         model = _segm_hrnet(arch_type, backbone, num_classes, pretrained_backbone=pretrained_backbone)
     elif backbone=='xception':
         model = _segm_xception(arch_type, backbone, num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
+    elif backbone=='mobilenetv3_large':
+        model = _segm_mobilenetv3_large(arch_type, backbone, num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
     else:
         raise NotImplementedError
     return model
@@ -211,6 +244,10 @@ def deeplabv3plus_mobilenet(num_classes=21, output_stride=8, pretrained_backbone
     """
     return _load_model('deeplabv3plus', 'mobilenetv2', num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
 
+def deeplabv3plus_mobilenetv3_large(num_classes=21, output_stride=8, pretrained_backbone=True):
+        """Constructs a DeepLabV3+ model with a MobileNetV3-Large backbone."""
+        return _load_model('deeplabv3plus', 'mobilenetv3_large', num_classes,output_stride=output_stride, pretrained_backbone=pretrained_backbone)
+                            
 def deeplabv3plus_xception(num_classes=21, output_stride=8, pretrained_backbone=True):
     """Constructs a DeepLabV3+ model with a Xception backbone.
 
