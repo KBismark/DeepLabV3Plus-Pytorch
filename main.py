@@ -19,7 +19,7 @@ from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
 
-from .fps_eval import benchmark_pure_fps, benchmark_end_to_end_fps, count_flops, format_extra_metrics
+from fps_eval import benchmark_pure_fps, benchmark_end_to_end_fps, count_flops, format_extra_metrics
 
 
 def get_argparser():
