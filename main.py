@@ -19,6 +19,8 @@ from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
 
+from .fps_eval import benchmark_pure_fps, benchmark_end_to_end_fps, count_flops, format_extra_metrics
+
 
 def get_argparser():
     parser = argparse.ArgumentParser()
@@ -317,6 +319,10 @@ def main():
         val_score, ret_samples = validate(
             opts=opts, model=model, loader=val_loader, device=device, metrics=metrics, ret_samples_ids=vis_sample_id)
         print(metrics.to_str(val_score))
+        pure_result = benchmark_pure_fps(model, (1, 3, opts.crop_size, opts.crop_size), device)
+        e2e_result = benchmark_end_to_end_fps(model, val_loader, device)
+        flops_result = count_flops(model, (1, 3, opts.crop_size, opts.crop_size))
+        print(format_extra_metrics(pure_result, e2e_result, flops_result))
         return
 
     interval_loss = 0
@@ -356,6 +362,11 @@ def main():
                     opts=opts, model=model, loader=val_loader, device=device, metrics=metrics,
                     ret_samples_ids=vis_sample_id)
                 print(metrics.to_str(val_score))
+                pure_result = benchmark_pure_fps(model, (1, 3, opts.crop_size, opts.crop_size), device)
+                e2e_result = benchmark_end_to_end_fps(model, val_loader, device)
+                flops_result = count_flops(model, (1, 3, opts.crop_size, opts.crop_size))
+                print(format_extra_metrics(pure_result, e2e_result, flops_result))
+                
                 if val_score['Mean IoU'] > best_score:  # save best model
                     best_score = val_score['Mean IoU']
                     save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
