@@ -12,6 +12,7 @@ from scipy.ndimage import distance_transform_edt
 
 from torch.utils import data
 from datasets import VOCSegmentation, Cityscapes
+from voc_geo_dataset import VOCSegmentationGeo
 from utils import ext_transforms as et
 from metrics import StreamSegMetrics
 
@@ -105,8 +106,11 @@ def get_dataset(opts):
                 et.ExtToTensor(),
                 et.ExtNormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
-        train_dst = VOCSegmentation(root=opts.data_root, year=opts.year,
-                                    image_set='train', download=opts.download, transform=train_transform)
+        train_dst = train_dst = VOCSegmentationGeo(
+            root=opts.data_root, year=opts.year, image_set='train', 
+            download=opts.download, transform=train_transform, 
+            num_classes=opts.num_classes, ignore_label=opts.ignore_label
+        )
         val_dst = VOCSegmentation(root=opts.data_root, year=opts.year,
                                   image_set='val', download=False, transform=val_transform)
 
@@ -371,19 +375,17 @@ def main():
     while True:
         model.train()
         cur_epochs += 1
-        for (images, labels) in train_loader:
+        for (images, labels, distance, boundary_gt) in train_loader:
             cur_itrs += 1
 
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
 
-            distance = None
-            distance_np, boundary_gt = compute_sdt_and_boundary_batch(
-                labels, opts.num_classes, opts.ignore_label
-            )
             boundary_gt = boundary_gt.to(device)
             if opts.use_aux:
-                distance = distance_np.to(device)
+               distance = distance.to(device)
+            else:
+               distance = None
 
             optimizer.zero_grad()
             outputs = model(images)
