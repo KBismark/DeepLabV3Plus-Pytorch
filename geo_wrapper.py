@@ -1,27 +1,3 @@
-"""
-Geometric supervision wrapper for VainF's DeepLabV3+.
-
-Design mirrors GASNetLite exactly: prior_head/boundary_head consume the
-SAME backbone feature tensor that feeds ASPP/decoder ('out', the
-high-level feature), but are NOT wired into the classifier's computation
-graph. This is what makes them genuinely discardable at inference -- the
-segmentation path (backbone -> classifier) is byte-for-byte identical to
-stock DeepLabV3+, whether or not this wrapper's aux heads exist.
-
-Usage:
-    from network import modeling
-    from geo_wrapper import GeoDeepLabV3Plus
-
-    base_model = modeling.deeplabv3plus_mobilenetv3_large(num_classes=21, output_stride=8)
-    model = GeoDeepLabV3Plus(base_model, num_classes=21, use_aux=True)   # with geometric supervision
-    # or
-    model = GeoDeepLabV3Plus(base_model, num_classes=21, use_aux=False)  # clean baseline, no aux heads at all
-
-Both variants share identical backbone + ASPP + decoder code (VainF's
-unmodified DeepLabV3+) -- the only difference is whether prior_head/
-boundary_head exist and run during training. At eval/inference, aux
-heads never run regardless of use_aux (see forward()).
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -62,22 +38,17 @@ class GeoDeepLabV3Plus(nn.Module):
         self.use_aux = use_aux
 
         if use_aux:
-            # in_channels must match the backbone's 'out' feature channel
-            # count -- 160 for MobileNetV3-Large, 320 for MobileNetV2,
-            # 2048 for ResNet50/101, 2048 for Xception. Pass explicitly to
-            # avoid guessing wrong for a given backbone; falls back to a
-            # lazy first-forward inference if not provided.
-            self._aux_in_channels = aux_in_channels
-            self.prior_head = None    # built lazily on first forward if aux_in_channels is None
-            self.boundary_head = None
-            self._aux_hidden_ch = aux_hidden_ch
+            if aux_in_channels is None:
+                raise ValueError(
+                    "aux_in_channels must be provided when use_aux=True "
+                    "(eager construction needs the channel count upfront -- "
+                    "see main_geo.py for how to infer it from base_model.backbone)."
+                )
+            self.prior_head = ConvHead(aux_in_channels, num_classes, aux_hidden_ch)
+            self.boundary_head = ConvHead(aux_in_channels, 1, aux_hidden_ch)
         else:
             self.prior_head = None
             self.boundary_head = None
-
-    def _build_aux_heads(self, in_channels, device):
-        self.prior_head = ConvHead(in_channels, self.num_classes, self._aux_hidden_ch).to(device)
-        self.boundary_head = ConvHead(in_channels, 1, self._aux_hidden_ch).to(device)
 
     def forward(self, x, run_aux=None):
         if run_aux is None:
@@ -93,10 +64,6 @@ class GeoDeepLabV3Plus(nn.Module):
 
         if run_aux:
             backbone_feature = features['out']            # same tensor ASPP consumes -- untouched, just read
-            if self.prior_head is None:
-                in_ch = self._aux_in_channels or backbone_feature.shape[1]
-                self._build_aux_heads(in_ch, backbone_feature.device)
-
             prior = torch.tanh(self.prior_head(backbone_feature))
             boundary = torch.sigmoid(self.boundary_head(backbone_feature))
             out["prior"] = F.interpolate(prior, size=input_shape, mode='bilinear', align_corners=False)
