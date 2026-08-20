@@ -4,7 +4,6 @@ import torch.nn.functional as F
 
 
 class ConvHead(nn.Module):
-    """Same shape as gasnet_lite/heads.py::ConvHead -- reused pattern for consistency."""
     def __init__(self, in_ch, out_ch, hidden_ch=64):
         super().__init__()
         self.net = nn.Sequential(
