@@ -1,4 +1,3 @@
-
 from tqdm import tqdm
 import network
 import utils
@@ -107,8 +106,8 @@ def get_dataset(opts):
                 et.ExtNormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
         train_dst = train_dst = VOCSegmentationGeo(
-            root=opts.data_root, year=opts.year, image_set='train', 
-            download=opts.download, transform=train_transform, 
+            root=opts.data_root, year=opts.year, image_set='train',
+            download=opts.download, transform=train_transform,
             num_classes=opts.num_classes, ignore_label=opts.ignore_label
         )
         val_dst = VOCSegmentation(root=opts.data_root, year=opts.year,
@@ -135,10 +134,10 @@ def compute_sdt_and_boundary_batch(label_batch, num_classes, ignore_label=255, d
     """
     label_batch: (N,H,W) long tensor, values in {0..num_classes-1, ignore_label}
     Returns: distance (N,num_classes,H,W) float32, boundary (N,1,H,W) float32
-    CPU/numpy, called once per training batch -- this is the main
-    throughput cost of the --use_aux path. If it bottlenecks your
-    dataloader, consider precomputing/caching per-image (not per-crop)
-    or moving this into a background worker.
+    Kept for reference / cityscapes path -- VOC training now gets
+    distance/boundary from VOCSegmentationGeo's __getitem__ instead (see
+    the train_loader unpacking in main()), so this function is no longer
+    called in the VOC training loop.
     """
     label_np = label_batch.cpu().numpy()
     n, h, w = label_np.shape
@@ -346,7 +345,13 @@ def main():
         model = nn.DataParallel(model)
         model.to(device)
         if opts.continue_training:
-            optimizer.load_state_dict(checkpoint["optimizer_state"])
+            try:
+                optimizer.load_state_dict(checkpoint["optimizer_state"])
+            except ValueError as e:
+                print(f"[main_geo] optimizer state incompatible with current param groups ({e}); "
+                      f"continuing with a freshly-initialized optimizer (model weights still restored "
+                      f"from checkpoint -- only momentum/LR-schedule state is reset). This is expected "
+                      f"if resuming a checkpoint saved before geo_wrapper.py's eager-aux-head fix.")
             scheduler.load_state_dict(checkpoint["scheduler_state"])
             cur_itrs = checkpoint["cur_itrs"]
             best_score = checkpoint['best_score']
